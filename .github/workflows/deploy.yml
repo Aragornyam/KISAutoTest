@@ -51,7 +51,7 @@ jobs:
       - name: Prepare static site directory
         run: |
           mkdir -p dist/pkg
-          cp index.html dist/
+          cp index.html style.css app.js dist/
           cp pkg/rust_repo_autotester_bg.wasm dist/pkg/
           cp pkg/rust_repo_autotester.js dist/pkg/
 
