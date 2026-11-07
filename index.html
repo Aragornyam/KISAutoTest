@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aragornyam's Rust Repo Autotester</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --ok: #22c55e;
+      --err: #ef4444;
+      --code-bg: #090d16;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 1.75rem;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .form-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    input[type="text"], input[type="password"] {
+      flex: 1;
+      min-width: 260px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--code-bg);
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+    button {
+      padding: 10px 20px;
+      border-radius: 6px;
+      border: none;
+      background: var(--accent);
+      color: #0f172a;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 0.95rem;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .stat-box {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      padding: 14px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .stat-val {
+      font-size: 1.6rem;
+      font-weight: 700;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      font-family: monospace;
+    }
+    .badge-ok { background: rgba(34, 197, 94, 0.2); color: var(--ok); }
+    .badge-err { background: rgba(239, 68, 68, 0.2); color: var(--err); }
+    .badge-info { background: rgba(56, 189, 248, 0.18); color: var(--accent); margin-right: 6px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      color: var(--muted);
+      font-weight: 600;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+    .filter-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    select {
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--code-bg);
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Проверка репозитория на соответствие требованиям КИС</h1>
+
+    <div class="card">
+      <div class="form-row">
+        <input
+          type="text"
+          id="repoUrl"
+          placeholder="https://github.com/owner/repo или https://github.com/owner/repo/tree/main/PR_1"
+        />
+        <input
+          type="password"
+          id="ghToken"
+          placeholder="GitHub Token (необязательно, для приватных репо)"
+        />
+        <button id="scanBtn" disabled>Загрузка Wasm...</button>
+      </div>
+      <div class="status" id="statusText">Инициализация WebAssembly-модуля...</div>
+    </div>
+
+    <div id="resultsArea" style="display: none;">
+      <div class="stats-grid" id="statsGrid"></div>
+
+      <div class="card" id="projectsCard" style="display: none;">
+        <strong>Обнаруженные директории практик / проектов:</strong>
+        <span id="projectsList" style="margin-left: 8px;"></span>
+      </div>
+
+      <div class="card">
+        <h2>Детализация найденных ошибок (с указанием файлов и строк)</h2>
+        <div class="filter-bar">
+          <label for="ruleFilter">Фильтр по правилу:</label>
+          <select id="ruleFilter">
+            <option value="ALL">Все ошибки</option>
+          </select>
+        </div>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 70px;">Код</th>
+                <th style="width: 240px;">Файл и строка</th>
+                <th>Описание правила и фрагмент</th>
+              </tr>
+            </thead>
+            <tbody id="violationsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Сводка по всем 52 правилам (С1–И7)</h2>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 70px;">Код</th>
+                <th style="width: 240px;">Категория</th>
+                <th>Правило</th>
+                <th style="width: 110px;">Статус</th>
+              </tr>
+            </thead>
+            <tbody id="summaryBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import init, { analyze_repository } from './pkg/rust_repo_autotester.js';
+
+    const scanBtn = document.getElementById('scanBtn');
+    const statusText = document.getElementById('statusText');
+    const resultsArea = document.getElementById('resultsArea');
+    const statsGrid = document.getElementById('statsGrid');
+    const projectsCard = document.getElementById('projectsCard');
+    const projectsList = document.getElementById('projectsList');
+    const violationsBody = document.getElementById('violationsBody');
+    const summaryBody = document.getElementById('summaryBody');
+    const ruleFilter = document.getElementById('ruleFilter');
+
+    let currentViolations = [];
+
+    async function boot() {
+      try {
+        await init();
+        scanBtn.disabled = false;
+        scanBtn.textContent = 'Проверить репозиторий';
+        statusText.textContent = 'Готов к проверке. Введите URL репозитория или ссылку на папку практики.';
+      } catch (err) {
+        statusText.textContent = 'Ошибка загрузки Wasm: ' + err.message;
+      }
+    }
+
+    function parseGithubUrl(url) {
+      const cleaned = url.trim().replace(/\.git$/, '').replace(/\/+$/, '');
+      const treeMatch = cleaned.match(/github\.com\/([^\/]+)\/([^\/]+)\/tree\/([^\/]+)(?:\/(.+))?/i);
+      if (treeMatch) {
+        return {
+          owner: treeMatch[1],
+          repo: treeMatch[2],
+          branch: treeMatch[3],
+          subpath: treeMatch[4] ? treeMatch[4].replace(/^\/+|\/+$/g, '') : ''
+        };
+      }
+      const match = cleaned.match(/github\.com\/([^\/]+)\/([^\/]+)/i) || cleaned.match(/^([^\/]+)\/([^\/]+)$/);
+      if (!match) return null;
+      return { owner: match[1], repo: match[2], branch: '', subpath: '' };
+    }
+
+    const BINARY_EXTENSIONS = new Set([
+      '.zip', '.tar', '.gz', '.tgz', '.rar', '.7z', '.bz2', '.xz', '.zst',
+      '.exe', '.dll', '.so', '.dylib', '.bin', '.o', '.obj', '.a', '.lib',
+      '.class', '.pyc', '.pyo', '.pyd', '.wasm', '.pdb', '.jar', '.war',
+      '.png', '.jpg', '.jpeg', '.gif', '.ico', '.pdf', '.mp3', '.mp4', '.woff', '.woff2'
+    ]);
+
+    function isKnownBinary(path) {
+      const lower = path.toLowerCase();
+      for (const ext of BINARY_EXTENSIONS) {
+        if (lower.endsWith(ext)) return true;
+      }
+      return false;
+    }
+
+    async function fetchRepoData(parsed, token) {
+      const { owner, repo, branch, subpath } = parsed;
+      const headers = { 'Accept': 'application/vnd.github+json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      statusText.textContent = `Получение истории коммитов ${owner}/${repo}...`;
+      const shaParam = branch ? `&sha=${encodeURIComponent(branch)}` : '';
+      const commitsResp = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/commits?per_page=30${shaParam}`,
+        { headers }
+      );
+      if (!commitsResp.ok) {
+        throw new Error(`Ошибка GitHub API (${commitsResp.status}): проверьте ссылку или лимит запросов`);
+      }
+      const commitsJson = await commitsResp.json();
+      if (!Array.isArray(commitsJson) || commitsJson.length === 0) {
+        throw new Error('Репозиторий пуст или коммиты не найдены.');
+      }
+
+      const headSha = commitsJson[0].sha;
+      const commits = commitsJson.map(c => ({
+        sha: c.sha,
+        message: c.commit && c.commit.message ? c.commit.message : ''
+      }));
+
+      statusText.textContent = `Получение дерева файлов (${headSha.slice(0, 7)})...`;
+      const treeResp = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/git/trees/${headSha}?recursive=1`,
+        { headers }
+      );
+      if (!treeResp.ok) {
+        throw new Error(`Не удалось получить дерево файлов (${treeResp.status})`);
+      }
+      const treeJson = await treeResp.json();
+      let blobs = (treeJson.tree || []).filter(item => item.type === 'blob');
+
+      // Если пользователь дал ссылку на конкретную папку (например, /tree/main/PR_1),
+      // оставляем файлы этой папки + корневые .gitignore / README.md / Makefile
+      if (subpath) {
+        const prefix = subpath + '/';
+        blobs = blobs.filter(item =>
+          item.path.startsWith(prefix) ||
+          item.path === '.gitignore' ||
+          item.path.toLowerCase() === 'readme.md' ||
+          item.path === 'Makefile' ||
+          item.path === 'run.sh' ||
+          item.path === 'run.bat'
+        );
+      }
+
+      const files = [];
+      const concurrency = 10;
+      let completed = 0;
+
+      async function worker(queue) {
+        while (queue.length > 0) {
+          const item = queue.shift();
+          const binary = isKnownBinary(item.path);
+          let content = null;
+
+          if (!binary && (item.size || 0) < 500000) {
+            try {
+              const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${headSha}/${encodeURI(item.path)}`;
+              const rawResp = await fetch(rawUrl);
+              if (rawResp.ok) {
+                content = await rawResp.text();
+              }
+            } catch (_) {
+              content = null;
+            }
+          }
+
+          files.push({
+            path: item.path,
+            content,
+            is_binary: binary
+          });
+
+          completed++;
+          statusText.textContent = `Загрузка исходного кода: ${completed} из ${blobs.length} файлов...`;
+        }
+      }
+
+      const queue = [...blobs];
+      const workers = Array.from({ length: concurrency }, () => worker(queue));
+      await Promise.all(workers);
+
+      return {
+        repo_name: subpath ? `${owner}/${repo} (${subpath})` : `${owner}/${repo}`,
+        files,
+        commits
+      };
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function renderViolations(filterRule) {
+      const filtered = filterRule === 'ALL'
+        ? currentViolations
+        : currentViolations.filter(v => v.rule_id === filterRule);
+
+      if (filtered.length === 0) {
+        violationsBody.innerHTML = '<tr><td colspan="3">Ошибок по выбранному фильтру не обнаружено.</td></tr>';
+        return;
+      }
+
+      violationsBody.innerHTML = filtered.map(v => {
+        let loc = escapeHtml(v.file);
+        if (v.line) {
+          loc += v.end_line && v.end_line !== v.line
+            ? `:${v.line}-${v.end_line}`
+            : `:${v.line}`;
+        }
+        return `
+          <tr>
+            <td><span class="badge badge-err">${escapeHtml(v.rule_id)}</span></td>
+            <td><code>${loc}</code></td>
+            <td>
+              <div><strong>${escapeHtml(v.description)}</strong></div>
+              <div style="margin-top:4px;"><code>${escapeHtml(v.snippet)}</code></div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    ruleFilter.addEventListener('change', () => {
+      renderViolations(ruleFilter.value);
+    });
+
+    scanBtn.addEventListener('click', async () => {
+      const parsed = parseGithubUrl(document.getElementById('repoUrl').value);
+      const token = document.getElementById('ghToken').value.trim();
+
+      if (!parsed) {
+        statusText.textContent = 'Укажите корректную ссылку вида https://github.com/owner/repo';
+        return;
+      }
+
+      scanBtn.disabled = true;
+      resultsArea.style.display = 'none';
+
+      try {
+        const payload = await fetchRepoData(parsed, token);
+        statusText.textContent = 'Запуск Rust-анализатора в WebAssembly...';
+
+        const reportJson = analyze_repository(JSON.stringify(payload));
+        const report = JSON.parse(reportJson);
+
+        if (report.error) {
+          throw new Error(report.error);
+        }
+
+        currentViolations = report.violations || [];
+
+        statsGrid.innerHTML = `
+          <div class="stat-box"><div class="stat-val">${report.total_files}</div><div>Файлов проверено</div></div>
+          <div class="stat-box"><div class="stat-val">${report.total_commits}</div><div>Коммитов проверено</div></div>
+          <div class="stat-box"><div class="stat-val" style="color:var(--ok)">${report.passed_rules} / 52</div><div>Правил пройдено</div></div>
+          <div class="stat-box"><div class="stat-val" style="color:var(--err)">${report.total_violations}</div><div>Всего нарушений</div></div>
+        `;
+
+        if (report.detected_projects && report.detected_projects.length > 0) {
+          projectsCard.style.display = 'block';
+          projectsList.innerHTML = report.detected_projects
+            .map(p => `<span class="badge badge-info">${escapeHtml(p)}</span>`)
+            .join('');
+        } else {
+          projectsCard.style.display = 'none';
+        }
+
+        const violatedRuleIds = [...new Set(currentViolations.map(v => v.rule_id))];
+        ruleFilter.innerHTML = '<option value="ALL">Все ошибки (' + currentViolations.length + ')</option>' +
+          violatedRuleIds.map(id => `<option value="${id}">Правило ${id}</option>`).join('');
+
+        renderViolations('ALL');
+
+        summaryBody.innerHTML = report.rules_summary.map(r => `
+          <tr>
+            <td><strong>${escapeHtml(r.rule_id)}</strong></td>
+            <td>${escapeHtml(r.category)}</td>
+            <td>${escapeHtml(r.description)}</td>
+            <td>
+              ${r.passed
+                ? '<span class="badge badge-ok">OK</span>'
+                : `<span class="badge badge-err">Ошибок: ${r.count}</span>`}
+            </td>
+          </tr>
+        `).join('');
+
+        resultsArea.style.display = 'block';
+        statusText.textContent = `Проверка репозитория ${report.repo_name} завершена.`;
+      } catch (err) {
+        statusText.textContent = 'Ошибка: ' + err.message;
+      } finally {
+        scanBtn.disabled = false;
+      }
+    });
+
+    boot();
+  </script>
+</body>
+</html>
